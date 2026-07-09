@@ -52,6 +52,7 @@ What's in the repo right now:
 piw/losses.py        the Matthew Weight loss (the paper's key trick)
 piw/network.py       the network: CSI tensor in, joint + limb maps out
 piw/skeleton.py      the 18 joints and 19 limbs, and the head channel counts
+piw/constants.py     the shared 46 x 82 label-grid size
 piw/dataset.py       loads Wi-Pose .mat frames into network-ready tensors
 piw/targets.py       renders JHM and PAF supervision maps from keypoints
 piw/train.py         training loop (masked Matthew-Weighted loss, Adam)

@@ -12,13 +12,20 @@ Low-confidence joints (conf < 0.2) come from a teacher network and are
 unreliable, so they are excluded: their JHM channel is left empty and their
 weight mask is 0, and any limb touching them is dropped from the PAF. The
 weight masks are what the loss multiplies in to ignore those channels.
+
+One deliberate exception: the background channel is computed from ALL joints,
+including low-confidence ones. A low-confidence joint is usually somewhere
+near its labeled spot, so background must not confidently claim "empty" right
+where a joint probably is. Rendering the uncertain joint into the background
+subtraction (while keeping its own channel masked) softens one channel instead
+of biasing it.
 """
 
 import numpy as np
 
+from piw.constants import OUT_H, OUT_W
 from piw.skeleton import LIMBS, NUM_JOINTS
 
-OUT_H, OUT_W = 46, 82        # target resolution (matches the network heads)
 SIGMA = 1.5                  # joint Gaussian std, in grid pixels
 PAF_WIDTH = 1.0              # half-thickness of the painted limb band, in px
 CONF_THRESH = 0.2            # joints below this are masked out of the loss
@@ -43,15 +50,24 @@ def joint_valid(conf, thresh=CONF_THRESH):
 
 
 def render_jhm(gx, gy, valid, out_h=OUT_H, out_w=OUT_W, sigma=SIGMA):
-    """(NUM_JOINTS + 1, H, W) float32: a Gaussian per valid joint + background."""
+    """(NUM_JOINTS + 1, H, W) float32: a Gaussian per valid joint + background.
+
+    Invalid joints get an empty channel (their mask excludes it from the loss
+    anyway), but they still participate in the background subtraction; see the
+    module docstring for why.
+    """
     hm = np.zeros((NUM_JOINTS + 1, out_h, out_w), np.float32)
     yy, xx = np.mgrid[0:out_h, 0:out_w]
+    bg = np.zeros((out_h, out_w), np.float32)
     for j in range(NUM_JOINTS):
-        if not valid[j]:
+        if not (np.isfinite(gx[j]) and np.isfinite(gy[j])):
             continue
         d2 = (xx - gx[j]) ** 2 + (yy - gy[j]) ** 2
-        hm[j] = np.exp(-d2 / (2 * sigma ** 2))
-    hm[NUM_JOINTS] = 1.0 - hm[:NUM_JOINTS].max(axis=0)
+        g = np.exp(-d2 / (2 * sigma ** 2)).astype(np.float32)
+        if valid[j]:
+            hm[j] = g
+        bg = np.maximum(bg, g)
+    hm[NUM_JOINTS] = 1.0 - bg
     return hm
 
 

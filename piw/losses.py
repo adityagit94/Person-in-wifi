@@ -1,9 +1,11 @@
 """Matthew Weight (MW) loss from "Person-in-WiFi" (ICCV 2019, arXiv:1904.00276).
 
 The paper trains joint heatmaps (JHMs) and part affinity fields (PAFs) with a
-weighted L2 whose per-pixel weight grows with the target value, so the sparse
-foreground (joint peaks, limb vectors) dominates the gradient instead of the
-~98-99% background pixels ("Matthew effect": the rich get richer).
+weighted L2 whose per-pixel weight grows with the target value, tilting the
+loss toward the sparse foreground (joint peaks, limb vectors) that plain
+averaging over the ~98-99% background pixels would wash out ("Matthew effect":
+the rich get richer). With the paper's constants the tilt is capped at 2:1, a
+nudge rather than a takeover; the stage-1 toy experiment measured exactly that.
 
 The negative-weight gotcha
 --------------------------

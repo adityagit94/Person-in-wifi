@@ -23,7 +23,8 @@ Last updated: 2026-07-10, Stage 4 training code built and smoke-tested locally.
 - Install: `.venv\Scripts\python -m pip install -r requirements.txt`.
 - Dependencies pinned in `requirements.txt`: torch 2.12.1 (CPU), numpy, scipy,
   matplotlib, pytest, h5py 3.16.0.
-- Run tests: `.venv\Scripts\python -m pytest tests -q` (17 tests, all passing).
+- Run tests: `.venv\Scripts\python -m pytest tests -q` (all should pass; the
+  loader tests skip unless the data sample is extracted).
 - CPU is fine for Stages 1 to 3. Stage 4 training goes to Colab/Kaggle (see
   the compute rule below).
 
@@ -147,12 +148,48 @@ localization needs the full dataset and many epochs; watch that PCK actually
 climbs during the real run, not just that loss drops. CPU is ~6 s/batch, so the
 full run (about 83k batches) is GPU-only, confirming the plan.
 
+### Review pass (2026-07-10)
+
+Line-by-line review of the whole repo. Fixes applied:
+- PCK is now measured in source image pixel space. The 46x82 grid squashes the
+  portrait frame anisotropically (one grid step is ~5.9 px in x, ~13.9 px in
+  y), so grid-space distances undercounted vertical error ~2.4x and the metric
+  was not the paper's convention. `pck_correct` converts grid coords back to
+  pixels before distances and the bbox diagonal.
+- Samples with fewer than 2 confident joints (no bounding box) are now excluded
+  from PCK scoring instead of silently counted as all misses.
+- The background JHM channel is now computed from ALL joints including
+  low-confidence ones, so it never claims "confidently empty" right where a
+  masked joint probably is; the joint's own channel stays masked. Rationale in
+  `piw/targets.py`.
+- Training checkpoints now carry model + optimizer + scheduler + epoch, and
+  `piw/train.py --resume checkpoints/epochNN.pt` continues an interrupted run
+  (Colab sessions disconnect; a 20-epoch run must survive that). `piw/eval.py`
+  accepts both the new checkpoint format and plain state_dicts.
+- Training seeds torch and numpy (`--seed`, default 0) for reproducibility.
+- The 46x82 grid size lives once in `piw/constants.py` (was duplicated in
+  network.py and targets.py).
+- `evaluate()` restores the model's train/eval mode instead of leaving it in
+  eval.
+- New tests: pixel-space anisotropy of PCK, unscoreable-sample exclusion,
+  loader contract test (skips when the data sample is absent).
+- Wording: losses.py docstring no longer overstates the foreground weighting.
+
+Deferred by choice: dataset packing, pin_memory/non_blocking, sub-pixel peak
+decoding, and periodic validation go into the Colab notebook work (that is
+where they matter); a configurable input-channel count waits until MM-Fi.
+
 Remaining for Stage 4 (the GPU run):
-1. On Colab/Kaggle: extract the full `Wi-Pose.rar`, point `WiPoseDataset` at the
-   Train/Test root (a notebook will `gdown` the dataset from its Google Drive).
-2. Optionally recompute source W,H from the full dataset maxima (the 480x640
+1. Pack the 166,600 .mat files once into contiguous arrays (one float32 CSI
+   array of ~0.9 GB plus a 166600x54 keypoint array). Per-sample HDF5 opens
+   are the bottleneck on Colab filesystems: 166,600 opens per epoch, 20
+   epochs; packed, sample i is an array slice and the whole set fits in RAM.
+2. On Colab/Kaggle: `gdown` the dataset from its Google Drive, extract to the
+   VM's local disk (never to mounted Drive), pack, then train.
+3. Optionally recompute source W,H from the full dataset maxima (the 480x640
    estimate is from the sample) for exact coordinate scaling.
-3. Run `piw/train.py` for 20 epochs, then `piw/eval.py` on the Test split.
-   Report PCK@0.2 overall and per group; watch for the paper's ordering (head
-   and feet worst) and expect a large drop on any unseen condition (known
-   result, not a bug).
+4. Run `piw/train.py` for 20 epochs (with periodic small-subset PCK to watch
+   learning, and sub-pixel peak decoding in eval), then `piw/eval.py` on the
+   Test split. Report PCK@0.2 overall and per group; watch for the paper's
+   ordering (head and feet worst) and expect a large drop on any unseen
+   condition (known result, not a bug).

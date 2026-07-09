@@ -23,11 +23,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from piw.constants import OUT_H, OUT_W
 from piw.skeleton import JHM_CHANNELS, PAF_CHANNELS
 
 IN_CHANNELS = 150     # 5 time samples x 30 subcarriers
 UPSAMPLE_HW = 96      # paper upsamples the 3x3 antenna grid to 96x96
-OUT_H, OUT_W = 46, 82
 
 
 class DoubleConv(nn.Module):

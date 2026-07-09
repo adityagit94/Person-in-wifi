@@ -1,8 +1,14 @@
 import numpy as np
 
 from piw.skeleton import LIMBS, NUM_JOINTS, JHM_CHANNELS, PAF_CHANNELS
-from piw.targets import (OUT_H, OUT_W, jhm_weight_mask, paf_weight_mask,
-                         render_jhm, render_paf, scale_keypoints)
+from piw.targets import (OUT_H, OUT_W, SIGMA, jhm_weight_mask,
+                         paf_weight_mask, render_jhm, render_paf,
+                         scale_keypoints)
+
+
+def _gauss(cx, cy):
+    yy, xx = np.mgrid[0:OUT_H, 0:OUT_W]
+    return np.exp(-((xx - cx) ** 2 + (yy - cy) ** 2) / (2 * SIGMA ** 2))
 
 
 def _one_valid(joint):
@@ -26,11 +32,17 @@ def test_jhm_shape_and_peak_location():
     assert np.isclose(hm[0].max(), 1.0, atol=1e-3)
 
 
-def test_jhm_background_is_complement():
+def test_jhm_background_is_complement_over_all_joints():
+    # joint 0 valid at (40, 20); all other joints invalid, sitting at (0, 0).
+    # Background subtracts ALL joints (valid or not), so it dips at (0, 0)
+    # even though those joints' own channels stay empty.
     gx = np.zeros(NUM_JOINTS); gy = np.zeros(NUM_JOINTS)
     gx[0], gy[0] = 40.0, 20.0
     hm = render_jhm(gx, gy, _one_valid(0))
-    assert np.allclose(hm[NUM_JOINTS], 1.0 - hm[:NUM_JOINTS].max(0))
+    expected_bg = 1.0 - np.maximum(_gauss(40.0, 20.0), _gauss(0.0, 0.0))
+    assert np.allclose(hm[NUM_JOINTS], expected_bg, atol=1e-6)
+    assert hm[NUM_JOINTS][0, 0] < 0.01      # not "confidently empty" there
+    assert hm[1].max() == 0.0               # invalid channel still empty
 
 
 def test_invalid_joint_channel_empty_and_masked():

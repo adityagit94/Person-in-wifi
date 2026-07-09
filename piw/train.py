@@ -10,6 +10,7 @@ import argparse
 import os
 import time
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
@@ -19,23 +20,37 @@ from piw.network import PersonInWiFi
 
 
 def train(root, epochs=20, batch=32, lr=1e-3, device="cpu", workers=0,
-          max_steps=None, ckpt="checkpoints", log_every=20):
+          max_steps=None, ckpt="checkpoints", log_every=20, seed=0,
+          resume=None):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
     ds = WiPoseDataset(root, "Train")
     dl = DataLoader(ds, batch_size=batch, shuffle=True, num_workers=workers,
-                    drop_last=True)
+                    drop_last=True,
+                    generator=torch.Generator().manual_seed(seed))
     model = PersonInWiFi().to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr, betas=(0.9, 0.999))
     sched = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[5, 10, 15],
                                                  gamma=0.5)
     os.makedirs(ckpt, exist_ok=True)
-    print(f"train frames: {len(ds)}  batches/epoch: {len(dl)}  device: {device}",
-          flush=True)
+
+    start_epoch, history = 1, []
+    if resume:
+        state = torch.load(resume, map_location=device)
+        model.load_state_dict(state["model"])
+        opt.load_state_dict(state["opt"])
+        sched.load_state_dict(state["sched"])
+        start_epoch = state["epoch"] + 1
+        history = list(state.get("history", []))
+        print(f"resumed from {resume} (finished epoch {state['epoch']})",
+              flush=True)
+    print(f"train frames: {len(ds)}  batches/epoch: {len(dl)}  "
+          f"device: {device}  seed: {seed}", flush=True)
 
     model.train()
-    history = []
     step = 0
     stop = False
-    for epoch in range(1, epochs + 1):
+    for epoch in range(start_epoch, epochs + 1):
         running, n, t0 = 0.0, 0, time.time()
         for bd in dl:
             csi = bd["csi"].to(device)
@@ -63,7 +78,11 @@ def train(root, epochs=20, batch=32, lr=1e-3, device="cpu", workers=0,
         history.append(avg)
         print(f"[epoch {epoch}] avg loss {avg:.4f}  ({time.time() - t0:.1f}s)",
               flush=True)
-        torch.save(model.state_dict(), os.path.join(ckpt, f"epoch{epoch:02d}.pt"))
+        # full training state, so an interrupted run resumes with --resume
+        torch.save({"model": model.state_dict(), "opt": opt.state_dict(),
+                    "sched": sched.state_dict(), "epoch": epoch,
+                    "history": history},
+                   os.path.join(ckpt, f"epoch{epoch:02d}.pt"))
         if stop:
             break
     return model, history
@@ -81,6 +100,9 @@ if __name__ == "__main__":
     ap.add_argument("--workers", type=int, default=0)
     ap.add_argument("--max-steps", type=int, default=None)
     ap.add_argument("--ckpt", default="checkpoints")
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--resume", default=None,
+                    help="checkpoint to continue from (epochNN.pt)")
     a = ap.parse_args()
     train(a.root, a.epochs, a.batch, a.lr, a.device, a.workers, a.max_steps,
-          a.ckpt)
+          a.ckpt, seed=a.seed, resume=a.resume)
