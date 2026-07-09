@@ -1,10 +1,9 @@
 # Progress log and methodology
 
-This is the living handoff document for the project. If you are picking this up
-in a fresh session (any machine, any account), read this file first, then
-`CLAUDE.md` (the spec) and `README.md` (the outward-facing summary). Everything
-needed to continue without losing knowledge is here. Keep it updated as work
-proceeds.
+This is the living handoff document for the project. Picking this up on a fresh
+machine? Read this file first, then `docs/spec.md` (the spec) and `README.md`
+(the outward-facing summary). Everything needed to continue without losing
+knowledge is here. Keep it updated as work proceeds.
 
 Last updated: 2026-07-10, after Stage 3.
 
@@ -28,20 +27,15 @@ Last updated: 2026-07-10, after Stage 3.
 - CPU is fine for Stages 1 to 3. Stage 4 training goes to Colab/Kaggle (see
   the compute rule below).
 
-## Working rules (agreed with the user, keep to these)
+## Conventions
 
-- Commit messages: short and plain, human-sounding (e.g. "add readme and
-  figures"), no conventional-commit prefixes, no verbose AI-style summaries.
-- Never add `Co-Authored-By` or any AI attribution to commits. Author is the
-  user alone. (History was rewritten once to remove a Claude co-author; do not
-  reintroduce it.)
+- Commit messages: short and plain (e.g. "add readme and figures"), no
+  conventional-commit prefixes.
 - No em or en dashes anywhere user-facing (docs, README, comments, commits).
   Reword with commas, colons, parentheses, or separate sentences.
 - Compute: keep local work to minutes-scale CPU (tests, toy runs, sample
-  checks). Anything heavy (full training, sweeps, full dataset extraction) goes
-  to Colab/Kaggle via GitHub, not the user's machine. Ask before any long local
-  run.
-- Prefer working inline over spawning subagents/workflows (token budget).
+  checks). Anything heavy (full training, sweeps, full dataset extraction) runs
+  on Colab/Kaggle via GitHub, not the local machine.
 
 ## Key decisions and findings
 
@@ -77,10 +71,9 @@ Last updated: 2026-07-10, after Stage 3.
   -> PAF 38) so switching datasets is a one-line change.
 
 ### Stage 3: data (`piw/dataset.py`, `piw/targets.py`)
-Findings from inspecting the real files (this is why CLAUDE.md insists on
-loading one file before writing a loader; several assumptions were wrong):
+Findings from inspecting the real files (this is why I load one file and check
+it before writing a loader; several assumptions were wrong):
 - Files are **MATLAB v7.3 (HDF5)**. `scipy.io.loadmat` fails; use **h5py**.
-  CLAUDE.md's suggestion to use scipy is wrong for this dataset.
 - Variables are **`CSI`** and **`SkeletonPoints`**, not the `csi_serial` /
   `jointsVector` names in the research report.
 - `CSI` is h5py shape `(3, 3, 30, 5)` = MATLAB `5x30x3x3` with axes reversed. It
@@ -103,7 +96,7 @@ loading one file before writing a loader; several assumptions were wrong):
 
 ## Data location and handling
 
-- Full dataset: `Wi-Pose.rar` (1.45 GB, 166,600 .mat files) lives in the user's
+- Full dataset: `Wi-Pose.rar` (1.45 GB, 166,600 .mat files) lives in a local
   Downloads folder, NOT in the repo. It is on Google Drive / Baidu (see
   `docs/research_notes.md`). Never commit it.
 - The repo's `data/` directory is git-ignored. For local development a sample

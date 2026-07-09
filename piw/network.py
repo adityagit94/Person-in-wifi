@@ -1,6 +1,6 @@
 """The Person-in-WiFi network (paper Figure 6), pose heads only.
 
-Data flow (per CLAUDE.md):
+Data flow (see docs/spec.md):
   input  150 x 3 x 3          5 time samples x 30 subcarriers = 150 channels,
                               3 x 3 = transmit x receive antenna pairs
   bilinear upsample -> 150 x 96 x 96
@@ -13,7 +13,7 @@ Data flow (per CLAUDE.md):
 The paper's third head (segmentation) is dropped: Wi-Pose has no masks.
 
 Head kernel derivation. To reach 46 x 82 from 96 x 96 with "stride 2 on
-height, stride 1 on width" (CLAUDE.md) using one valid conv:
+height, stride 1 on width" using one valid conv:
     height: (96 - kh) / 2 + 1 = 46  ->  kh = 6
     width:  (96 - kw) / 1 + 1 = 82  ->  kw = 15
 so kernel (6, 15), stride (2, 1), no padding.

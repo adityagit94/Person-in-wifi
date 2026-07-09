@@ -1,8 +1,8 @@
 """COCO-18 skeleton definition (OpenPose body ordering).
 
 Wi-Pose ships 18 2D keypoints in OpenPose COCO-18 style ordering. The exact
-joint semantics get confirmed against a real .mat file in stage 3 (CLAUDE.md
-is emphatic: build against what is actually in the file). For now these
+joint semantics get confirmed against a real .mat file in stage 3 (the rule is
+to build against what is actually in the file, not assumptions). For now these
 definitions fix the two numbers the network heads need: how many joints and
 how many limbs.
 

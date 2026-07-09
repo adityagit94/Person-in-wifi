@@ -60,9 +60,9 @@ mw_vs_l2.png         its output figure
 stage2_network_check.py   prints the network's output shapes and size
 stage3_data_check.py      renders targets on real frames for a visual check
 figs/                figures for this README + the script that makes them
+docs/spec.md         the project spec: network, loss, data, evaluation
 docs/PROGRESS.md     living log of decisions, findings, and next steps
 docs/research_notes.md   background research: the paper, datasets, hardware
-CLAUDE.md            working spec for the project
 ```
 
 ## Stage 1: the Matthew Weight loss
@@ -225,9 +225,9 @@ interior choices are the natural place to tune if Stage 4 training calls for it.
 
 ## Stage 3: real data
 
-This is where assumptions meet the actual files, and CLAUDE.md is strict about
-it: open one real `.mat` and check what is inside before writing any loader.
-That paid off, because three things were not as the notes assumed. The files are
+This is where assumptions meet the actual files, so I made it a rule to open one
+real `.mat` and check what is inside before writing any loader. That paid off,
+because three things were not as the notes assumed. The files are
 MATLAB v7.3 (HDF5), so the standard `scipy.io.loadmat` cannot read them and the
 loader uses `h5py` instead. The CSI is already amplitude (no complex numbers to
 handle) and reshapes cleanly to the paper's `150×3×3` input. And the 18

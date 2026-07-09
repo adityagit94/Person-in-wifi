@@ -4,6 +4,9 @@ __pycache__/
 .pytest_cache/
 data/
 
+# local tooling notes, not part of the repo
+CLAUDE.md
+
 # local exports of the README, not part of the repo
 README.html
 README.pdf
