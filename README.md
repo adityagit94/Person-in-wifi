@@ -190,6 +190,8 @@ heads use a strided convolution to land on the exact 46×82 label resolution (st
 2 on height, stride 1 on width, which forces a 6×15 kernel). The paper's third head,
 person segmentation, is left out because the substitute dataset has no masks.
 
+![architecture](figs/architecture.png)
+
 A random forward pass produces exactly the shapes the paper specifies:
 
 ```
@@ -199,12 +201,23 @@ JHM head (joints + bg) (2, 19, 46, 82)      18 joints + 1 background
 PAF head (limbs × 2)   (2, 38, 46, 82)      19 limbs × (x, y)
 ```
 
-The whole network is 8.68 million parameters. The tests in
-[tests/test_network.py](tests/test_network.py) check the output shapes at several
-batch sizes, confirm a backward pass fills every parameter with a finite gradient
-(so it can actually train), and confirm the head sizes are configurable for later
-datasets with different joint counts. Run the shape/size report yourself with
+The whole network is 8.68 million parameters, and almost all of them (91%) sit in
+the U-Net trunk. The two output heads are tiny by comparison:
+
+![parameter breakdown](figs/param_breakdown.png)
+
+The tests in [tests/test_network.py](tests/test_network.py) check the output shapes
+at several batch sizes, confirm a backward pass fills every parameter with a finite
+gradient (so it can actually train), and confirm the head sizes are configurable for
+later datasets with different joint counts. Run the shape/size report yourself with
 `python stage2_network_check.py`.
+
+Note on faithfulness: the parts the paper pins down (the input tensor, the 96×96
+upsample, the residual-then-U-Net structure, the two head output shapes, and the
+stride rule) are matched exactly. The U-Net's interior (its depth, channel widths,
+and normalization) is a standard reconstruction, because the original authors never
+released their code and the paper does not give per-layer specifications. Those
+interior choices are the natural place to tune if Stage 4 training calls for it.
 
 ## Running it
 
