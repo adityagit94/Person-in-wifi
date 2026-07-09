@@ -12,21 +12,28 @@ import time
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 
 from piw.dataset import WiPoseDataset
 from piw.losses import pose_loss
 from piw.network import PersonInWiFi
 
 
-def train(root, epochs=20, batch=32, lr=1e-3, device="cpu", workers=0,
+def train(data, epochs=20, batch=32, lr=1e-3, device="cpu", workers=0,
           max_steps=None, ckpt="checkpoints", log_every=20, seed=0,
-          resume=None):
+          resume=None, on_epoch_end=None):
+    """Train the network.
+
+    ``data`` is either a Dataset instance (PackedWiPose for real runs) or a
+    root path, in which case WiPoseDataset(data, "Train") is used.
+    ``on_epoch_end(model, epoch)``, if given, runs after each epoch's
+    checkpoint is saved (e.g. periodic validation from the notebook).
+    """
     torch.manual_seed(seed)
     np.random.seed(seed)
-    ds = WiPoseDataset(root, "Train")
+    ds = data if isinstance(data, Dataset) else WiPoseDataset(data, "Train")
     dl = DataLoader(ds, batch_size=batch, shuffle=True, num_workers=workers,
-                    drop_last=True,
+                    drop_last=True, pin_memory=(device != "cpu"),
                     generator=torch.Generator().manual_seed(seed))
     model = PersonInWiFi().to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr, betas=(0.9, 0.999))
@@ -53,9 +60,11 @@ def train(root, epochs=20, batch=32, lr=1e-3, device="cpu", workers=0,
     for epoch in range(start_epoch, epochs + 1):
         running, n, t0 = 0.0, 0, time.time()
         for bd in dl:
-            csi = bd["csi"].to(device)
-            jhm, paf = bd["jhm"].to(device), bd["paf"].to(device)
-            jm, pm = bd["jhm_mask"].to(device), bd["paf_mask"].to(device)
+            csi = bd["csi"].to(device, non_blocking=True)
+            jhm = bd["jhm"].to(device, non_blocking=True)
+            paf = bd["paf"].to(device, non_blocking=True)
+            jm = bd["jhm_mask"].to(device, non_blocking=True)
+            pm = bd["paf_mask"].to(device, non_blocking=True)
 
             jhm_p, paf_p = model(csi)
             loss, lj, lp = pose_loss(jhm_p, jhm, jm, paf_p, paf, pm)
@@ -83,6 +92,8 @@ def train(root, epochs=20, batch=32, lr=1e-3, device="cpu", workers=0,
                     "sched": sched.state_dict(), "epoch": epoch,
                     "history": history},
                    os.path.join(ckpt, f"epoch{epoch:02d}.pt"))
+        if on_epoch_end is not None:
+            on_epoch_end(model, epoch)
         if stop:
             break
     return model, history

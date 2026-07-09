@@ -21,7 +21,7 @@ import os
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 
 from piw.constants import OUT_H, OUT_W
 from piw.dataset import WiPoseDataset
@@ -42,12 +42,24 @@ JOINT_GROUPS = {
 
 @torch.no_grad()
 def decode_keypoints(jhm):
-    """(B, J+1, H, W) -> (B, J, 2) grid coordinates (x=col, y=row) via argmax."""
+    """(B, J+1, H, W) -> (B, J, 2) grid coordinates (x=col, y=row).
+
+    Argmax plus a quarter-cell shift toward the larger neighbor on each axis,
+    the standard heatmap decoding refinement. On a 46x82 grid one full cell is
+    6 to 14 source pixels, so the refinement buys real accuracy.
+    """
     hm = jhm[:, :NUM_JOINTS]                       # drop background channel
     B, J, H, W = hm.shape
     idx = hm.reshape(B, J, -1).argmax(-1)
-    xs = (idx % W).float()
-    ys = (idx // W).float()
+    xi, yi = idx % W, idx // W
+    bi = torch.arange(B)[:, None].expand(B, J)
+    ji = torch.arange(J)[None, :].expand(B, J)
+    left = hm[bi, ji, yi, (xi - 1).clamp_min(0)]
+    right = hm[bi, ji, yi, (xi + 1).clamp_max(W - 1)]
+    up = hm[bi, ji, (yi - 1).clamp_min(0), xi]
+    down = hm[bi, ji, (yi + 1).clamp_max(H - 1), xi]
+    xs = xi.float() + 0.25 * torch.sign(right - left)
+    ys = yi.float() + 0.25 * torch.sign(down - up)
     return torch.stack([xs, ys], dim=-1)
 
 
@@ -78,16 +90,23 @@ def pck_correct(pred_xy, gt, thresh=0.2):
 
 
 @torch.no_grad()
-def evaluate(model, root, split="Test", device="cpu", batch=32, workers=0,
+def evaluate(model, data, split="Test", device="cpu", batch=32, workers=0,
              max_batches=None):
-    dl = DataLoader(WiPoseDataset(root, split), batch_size=batch,
-                    num_workers=workers)
+    """PCK@0.2 over a dataset.
+
+    ``data`` is either a Dataset instance (e.g. PackedWiPose, or a Subset for
+    quick periodic validation) or a root path, in which case
+    WiPoseDataset(data, split) is used.
+    """
+    ds = data if isinstance(data, Dataset) else WiPoseDataset(data, split)
+    dl = DataLoader(ds, batch_size=batch, num_workers=workers,
+                    pin_memory=(device != "cpu"))
     was_training = model.training
     model.eval().to(device)
     hit = np.zeros(NUM_JOINTS)
     tot = np.zeros(NUM_JOINTS)
     for i, bd in enumerate(dl):
-        jhm_p, _ = model(bd["csi"].to(device))
+        jhm_p, _ = model(bd["csi"].to(device, non_blocking=True))
         pred = decode_keypoints(jhm_p).cpu()
         correct, scored = pck_correct(pred, bd["keypoints_grid"])
         hit += correct.sum(0).numpy()

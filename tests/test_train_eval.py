@@ -30,7 +30,18 @@ def test_decode_recovers_peak():
     jhm = torch.zeros(1, NUM_JOINTS + 1, OUT_H, OUT_W)
     jhm[0, 0, 20, 40] = 1.0                       # joint 0 peak at row 20, col 40
     xy = decode_keypoints(jhm)
+    # isolated peak, equal (zero) neighbors on both sides: no sub-pixel shift
     assert xy[0, 0, 0].item() == 40 and xy[0, 0, 1].item() == 20
+
+
+def test_decode_subpixel_shift_toward_larger_neighbor():
+    jhm = torch.zeros(1, NUM_JOINTS + 1, OUT_H, OUT_W)
+    jhm[0, 0, 20, 40] = 1.0
+    jhm[0, 0, 20, 41] = 0.5                       # mass to the right
+    jhm[0, 0, 19, 40] = 0.5                       # and above
+    xy = decode_keypoints(jhm)
+    assert torch.isclose(xy[0, 0, 0], torch.tensor(40.25))
+    assert torch.isclose(xy[0, 0, 1], torch.tensor(19.75))
 
 
 def test_pck_perfect_prediction():

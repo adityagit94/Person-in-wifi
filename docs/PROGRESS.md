@@ -179,17 +179,37 @@ Deferred by choice: dataset packing, pin_memory/non_blocking, sub-pixel peak
 decoding, and periodic validation go into the Colab notebook work (that is
 where they matter); a configurable input-channel count waits until MM-Fi.
 
-Remaining for Stage 4 (the GPU run):
-1. Pack the 166,600 .mat files once into contiguous arrays (one float32 CSI
-   array of ~0.9 GB plus a 166600x54 keypoint array). Per-sample HDF5 opens
-   are the bottleneck on Colab filesystems: 166,600 opens per epoch, 20
-   epochs; packed, sample i is an array slice and the whole set fits in RAM.
-2. On Colab/Kaggle: `gdown` the dataset from its Google Drive, extract to the
-   VM's local disk (never to mounted Drive), pack, then train.
-3. Optionally recompute source W,H from the full dataset maxima (the 480x640
-   estimate is from the sample) for exact coordinate scaling.
-4. Run `piw/train.py` for 20 epochs (with periodic small-subset PCK to watch
-   learning, and sub-pixel peak decoding in eval), then `piw/eval.py` on the
-   Test split. Report PCK@0.2 overall and per group; watch for the paper's
-   ordering (head and feet worst) and expect a large drop on any unseen
-   condition (known result, not a bug).
+### Colab notebook ready (2026-07-10)
+
+Everything for the GPU run is built and dry-run locally; only the actual
+20-epoch run remains. What was added:
+- `piw/pack.py`: packs the 166,600 .mat files once into contiguous arrays
+  (csi.npy (N,150,3,3) float32 unnormalized, skel.npy (N,54) float32,
+  files.txt). Prints keypoint maxima per split as a check on the 480x640
+  source-frame estimate (sample maxima: 608 vertical, 464 horizontal, so the
+  estimate holds).
+- `PackedWiPose` in `piw/dataset.py`: loads the packed arrays (in RAM by
+  default, mmap optional) and produces items identical to `WiPoseDataset`;
+  a round-trip test enforces that. Shared helpers `reshape_csi`,
+  `normalize_csi`, `make_item` now back both loaders.
+- `train()` and `evaluate()` accept a Dataset instance or a root path.
+  `train()` gained `on_epoch_end(model, epoch)` (used for periodic validation
+  from the notebook), pin_memory and non_blocking transfers.
+- `decode_keypoints` now does quarter-cell sub-pixel refinement toward the
+  larger neighbor (one grid cell is 6 to 14 source px, so this matters).
+- `stage4_colab.ipynb`: the run itself. Order: GPU check, clone + pull, mount
+  Drive (checkpoints go there so disconnects are survivable), gdown the
+  dataset to the VM disk, bsdtar-extract, pack, sanity cell (asserts the
+  132,847 / 33,753 split and renders one target + skeleton), train 20 epochs
+  with per-epoch checkpoint + validation PCK on ~1,700 held-out frames, final
+  full-test PCK (overall, per group, per joint), loss + PCK curves, artifacts
+  copied to Drive. Resume after a disconnect: rerun cells, set
+  resume=f"{CKPT}/epochNN.pt" in the training cell.
+- Do NOT pip install requirements.txt on Colab (it pins the CPU torch build);
+  Colab's preinstalled stack has everything the notebook needs.
+
+Remaining for Stage 4: run the notebook on a GPU runtime, bring back
+results_test.json, val_log.json, training_curves.png, and epoch20.pt, then
+write up the numbers (README + this log). Watch for the paper's ordering
+(head worst) and expect a large drop on any unseen condition (known result,
+not a bug).

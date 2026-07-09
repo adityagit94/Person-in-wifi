@@ -1,14 +1,22 @@
-"""Wi-Pose dataset loader.
+"""Wi-Pose dataset loaders.
 
-Each .mat is MATLAB v7.3 (HDF5), so it is read with h5py, not
-scipy.io.loadmat. Two variables per file:
+Two ways to read the data, producing identical items:
+
+  WiPoseDataset   reads the original .mat files (MATLAB v7.3 / HDF5, so h5py,
+                  not scipy.io.loadmat). Fine locally and for small samples.
+  PackedWiPose    reads the contiguous arrays written by ``python -m piw.pack``.
+                  This is what real training uses: one file open per split
+                  instead of one per sample per epoch, and the whole training
+                  split (~0.9 GB float32) fits in RAM.
+
+Each .mat holds two variables:
   CSI              h5py shape (3, 3, 30, 5); this is MATLAB 5x30x3x3 with the
                    axes reversed. Already amplitude (real, non-negative).
-  SkeletonPoints   shape (1, 54) = [x*18, y*18, conf*18], 18 COCO-18 joints,
-                   pixel coordinates plus AlphaPose confidences.
+  SkeletonPoints   shape (1, 54) = [vertical*18, horizontal*18, conf*18], 18
+                   COCO-18 joints, pixel coordinates plus AlphaPose confidences.
 
-The loader turns each file into network-ready tensors: a 150x3x3 CSI input and
-the JHM / PAF targets with their loss masks.
+An item is a normalized 150x3x3 CSI tensor plus the JHM / PAF targets and
+their loss masks.
 """
 
 import glob
@@ -31,17 +39,25 @@ def load_mat(path):
     return csi, sp
 
 
-def csi_to_input(csi):
-    """h5py (3,3,30,5) -> normalized (150, 3, 3) float32 network input.
+def reshape_csi(csi):
+    """h5py (3,3,30,5) -> (150, 3, 3) float32, unnormalized.
 
-    Undo the HDF5 axis reversal to MATLAB order (5, 30, 3, 3), then flatten the
-    5 time samples x 30 subcarriers onto 150 channels, keeping the 3x3 antenna
-    grid. Normalize per sample (zero mean, unit std).
+    Undo the HDF5 axis reversal back to MATLAB order (5, 30, 3, 3), then
+    flatten the 5 time samples x 30 subcarriers onto 150 channels, keeping the
+    3x3 antenna grid.
     """
     m = np.transpose(csi, (3, 2, 1, 0))          # (5, 30, 3, 3)
-    x = m.reshape(150, 3, 3).astype(np.float32)
-    x = (x - x.mean()) / (x.std() + 1e-6)
-    return x
+    return m.reshape(150, 3, 3).astype(np.float32)
+
+
+def normalize_csi(x):
+    """Per-sample normalization: zero mean, unit std."""
+    return (x - x.mean()) / (x.std() + 1e-6)
+
+
+def csi_to_input(csi):
+    """h5py CSI -> normalized (150, 3, 3) float32 network input."""
+    return normalize_csi(reshape_csi(csi))
 
 
 def parse_skeleton(sp):
@@ -59,6 +75,23 @@ def parse_skeleton(sp):
     return x, y, conf
 
 
+def make_item(x, sp):
+    """Normalized CSI (150,3,3) + raw SkeletonPoints (54,) -> training item."""
+    px, py, conf = parse_skeleton(sp)
+    valid = joint_valid(conf)
+    gx, gy = scale_keypoints(px, py)
+    return {
+        "csi": torch.from_numpy(x),
+        "jhm": torch.from_numpy(render_jhm(gx, gy, valid)),
+        "paf": torch.from_numpy(render_paf(gx, gy, valid)),
+        "jhm_mask": torch.from_numpy(jhm_weight_mask(valid)),
+        "paf_mask": torch.from_numpy(paf_weight_mask(valid)),
+        # (18, 3) grid-space keypoints for visualization / evaluation
+        "keypoints_grid": torch.from_numpy(
+            np.stack([gx, gy, np.asarray(conf, np.float32)], axis=-1)),
+    }
+
+
 class WiPoseDataset(Dataset):
     """Loads Wi-Pose frames from ``<root>/<split>/*.mat``."""
 
@@ -74,16 +107,28 @@ class WiPoseDataset(Dataset):
 
     def __getitem__(self, i):
         csi, sp = load_mat(self.files[i])
-        px, py, conf = parse_skeleton(sp)
-        valid = joint_valid(conf)
-        gx, gy = scale_keypoints(px, py)
-        return {
-            "csi": torch.from_numpy(csi_to_input(csi)),
-            "jhm": torch.from_numpy(render_jhm(gx, gy, valid)),
-            "paf": torch.from_numpy(render_paf(gx, gy, valid)),
-            "jhm_mask": torch.from_numpy(jhm_weight_mask(valid)),
-            "paf_mask": torch.from_numpy(paf_weight_mask(valid)),
-            # (18, 3) grid-space keypoints for visualization / evaluation
-            "keypoints_grid": torch.from_numpy(
-                np.stack([gx, gy, conf.astype(np.float32)], axis=-1)),
-        }
+        return make_item(csi_to_input(csi), sp)
+
+
+class PackedWiPose(Dataset):
+    """Loads the packed arrays written by ``python -m piw.pack``.
+
+    in_memory=True (default) loads both arrays into RAM; False memory-maps
+    them instead (for machines where the split does not fit).
+    """
+
+    def __init__(self, root, split="Train", in_memory=True):
+        d = os.path.join(root, split)
+        mode = None if in_memory else "r"
+        self.csi = np.load(os.path.join(d, "csi.npy"), mmap_mode=mode)
+        self.skel = np.load(os.path.join(d, "skel.npy"), mmap_mode=mode)
+        if len(self.csi) != len(self.skel):
+            raise ValueError(f"csi/skel length mismatch under {d}")
+
+    def __len__(self):
+        return len(self.csi)
+
+    def __getitem__(self, i):
+        x = normalize_csi(np.array(self.csi[i], dtype=np.float32))
+        sp = np.asarray(self.skel[i], dtype=np.float64)
+        return make_item(x, sp)

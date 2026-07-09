@@ -57,12 +57,14 @@ piw/dataset.py       loads Wi-Pose .mat frames into network-ready tensors
 piw/targets.py       renders JHM and PAF supervision maps from keypoints
 piw/train.py         training loop (masked Matthew-Weighted loss, Adam)
 piw/eval.py          decodes joints from heatmaps and scores PCK@0.2
+piw/pack.py          packs the 166,600 .mat files into fast contiguous arrays
 tests/               unit tests for the loss, network, targets, and training
 mw_vs_l2_toy.py      stage-1 experiment: does the loss actually help?
 mw_vs_l2.png         its output figure
 stage2_network_check.py   prints the network's output shapes and size
 stage3_data_check.py      renders targets on real frames for a visual check
 stage4_smoke.py           trains a few steps to check the pipeline end to end
+stage4_colab.ipynb        the real training run, built for Google Colab
 figs/                figures for this README + the script that makes them
 docs/spec.md         the project spec: network, loss, data, evaluation
 docs/PROGRESS.md     living log of decisions, findings, and next steps
@@ -275,14 +277,18 @@ python figs/make_figs.py          # regenerate the README figures (seconds)
 ## What comes next
 
 **Stage 4: training and evaluation.** 20 epochs over the official 132,847-sample
-split, on Colab/Kaggle GPUs rather than locally. The metric is PCK@0.2, the
-fraction of predicted joints landing within 20% of the person's bounding-box
-diagonal of the truth. Two things to look for: absolute scores in the same league
-as the paper's 78.75, and the same per-body-part ordering the paper found (torso
-and arms easiest, head and feet hardest, since small parts scatter 12.5 cm radio
-waves poorly). Known limitation, straight from the paper: models like this largely
-memorize the room. The paper's own accuracy collapsed in rooms it wasn't trained
-in, so the same collapse here is expected behavior, not a bug.
+split, on a Colab GPU rather than locally. Everything is ready in
+[stage4_colab.ipynb](stage4_colab.ipynb): it downloads and packs the dataset,
+trains with per-epoch checkpoints saved to Drive (so a disconnected session
+resumes instead of restarting), tracks validation PCK each epoch, and reports
+the final test score. The metric is PCK@0.2, the fraction of predicted joints
+landing within 20% of the person's bounding-box diagonal of the truth. Two
+things to look for: absolute scores in the same league as the paper's 78.75,
+and the same per-body-part ordering the paper found (torso and arms easiest,
+head hardest, since small parts scatter 12.5 cm radio waves poorly). Known
+limitation, straight from the paper: models like this largely memorize the
+room. The paper's own accuracy collapsed in rooms it wasn't trained in, so the
+same collapse here is expected behavior, not a bug.
 
 **Stage 5: beyond.** A physics-based CSI simulator (model the room as a sum of
 signal paths: static reflections plus one moving echo per body joint) to generate
