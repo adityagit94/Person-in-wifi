@@ -41,8 +41,8 @@ camera goes away.
 | Stage | What | State |
 |---|---|---|
 | 1 | The paper's special loss function, tested in isolation | **done** |
-| 2 | The paper's network architecture, with shape/sanity tests | next |
-| 3 | Data loading + label rendering for the public Wi-Pose dataset | not started |
+| 2 | The paper's network architecture, with shape/sanity tests | **done** |
+| 3 | Data loading + label rendering for the public Wi-Pose dataset | next |
 | 4 | Full training and evaluation (on cloud GPUs) | not started |
 | 5 | A physics-based synthetic CSI generator; the MM-Fi dataset | not started |
 
@@ -50,9 +50,12 @@ What's in the repo right now:
 
 ```
 piw/losses.py        the Matthew Weight loss (the paper's key trick)
-tests/               unit tests for the loss, with hand-checked arithmetic
+piw/network.py       the network: CSI tensor in, joint + limb maps out
+piw/skeleton.py      the 18 joints and 19 limbs, and the head channel counts
+tests/               unit tests for the loss and the network
 mw_vs_l2_toy.py      stage-1 experiment: does the loss actually help?
 mw_vs_l2.png         its output figure
+stage2_network_check.py   prints the network's output shapes and size
 figs/                figures for this README + the script that makes them
 docs/research_notes.md   background research: the paper, datasets, hardware
 CLAUDE.md            working spec for the project
@@ -177,6 +180,32 @@ same data, same budget, and the reweighted loss localizes measurably better on
 sparse targets.* The dramatic version of the claim (paper, Figure 7) belongs to
 full-scale training and stage 4 will test it there.
 
+## Stage 2: the network
+
+The paper's architecture (its Figure 6), rebuilt in [piw/network.py](piw/network.py).
+The flow is: take the 150×3×3 CSI tensor (150 channels = 5 time samples × 30
+frequencies, 3×3 = the antenna grid), bilinear-upsample the antenna grid to 96×96,
+pass it through a residual block and a U-Net, then split into two output heads. The
+heads use a strided convolution to land on the exact 46×82 label resolution (stride
+2 on height, stride 1 on width, which forces a 6×15 kernel). The paper's third head,
+person segmentation, is left out because the substitute dataset has no masks.
+
+A random forward pass produces exactly the shapes the paper specifies:
+
+```
+input                  (2, 150, 3, 3)
+after bilinear upsample (2, 150, 96, 96)
+JHM head (joints + bg) (2, 19, 46, 82)      18 joints + 1 background
+PAF head (limbs × 2)   (2, 38, 46, 82)      19 limbs × (x, y)
+```
+
+The whole network is 8.68 million parameters. The tests in
+[tests/test_network.py](tests/test_network.py) check the output shapes at several
+batch sizes, confirm a backward pass fills every parameter with a finite gradient
+(so it can actually train), and confirm the head sizes are configurable for later
+datasets with different joint counts. Run the shape/size report yourself with
+`python stage2_network_check.py`.
+
 ## Running it
 
 Needs Python 3.10+ (developed on 3.14). CPU only, no GPU required.
@@ -193,13 +222,6 @@ python figs/make_figs.py          # regenerate the README figures (seconds)
 ```
 
 ## What comes next
-
-**Stage 2: the network.** The paper's architecture: the 150×3×3 CSI tensor is
-upsampled to 150×96×96, passed through a residual block and a U-Net, and two output
-heads downsample to 46×82 (one for joint heatmaps, one for limb fields). The paper's
-third head, person segmentation, is dropped because the substitute dataset has no
-segmentation labels. First test: random input in, correct shapes out, parameter
-count printed.
 
 **Stage 3: real data.** The public [Wi-Pose dataset](https://github.com/NjtechCVLab/Wi-PoseDataset):
 166,600 packets of real CSI from 12 volunteers doing 12 actions, with 18-joint
