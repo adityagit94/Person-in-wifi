@@ -4,3 +4,4 @@ numpy==2.5.1
 scipy==1.18.0
 matplotlib==3.11.0
 pytest==9.1.1
+h5py==3.16.0     # Wi-Pose .mat files are MATLAB v7.3 (HDF5); scipy can't read them

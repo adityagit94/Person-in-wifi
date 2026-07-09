@@ -42,8 +42,8 @@ camera goes away.
 |---|---|---|
 | 1 | The paper's special loss function, tested in isolation | **done** |
 | 2 | The paper's network architecture, with shape/sanity tests | **done** |
-| 3 | Data loading + label rendering for the public Wi-Pose dataset | next |
-| 4 | Full training and evaluation (on cloud GPUs) | not started |
+| 3 | Data loading + label rendering for the public Wi-Pose dataset | **done** |
+| 4 | Full training and evaluation (on cloud GPUs) | next |
 | 5 | A physics-based synthetic CSI generator; the MM-Fi dataset | not started |
 
 What's in the repo right now:
@@ -52,11 +52,15 @@ What's in the repo right now:
 piw/losses.py        the Matthew Weight loss (the paper's key trick)
 piw/network.py       the network: CSI tensor in, joint + limb maps out
 piw/skeleton.py      the 18 joints and 19 limbs, and the head channel counts
-tests/               unit tests for the loss and the network
+piw/dataset.py       loads Wi-Pose .mat frames into network-ready tensors
+piw/targets.py       renders JHM and PAF supervision maps from keypoints
+tests/               unit tests for the loss, network, and target rendering
 mw_vs_l2_toy.py      stage-1 experiment: does the loss actually help?
 mw_vs_l2.png         its output figure
 stage2_network_check.py   prints the network's output shapes and size
+stage3_data_check.py      renders targets on real frames for a visual check
 figs/                figures for this README + the script that makes them
+docs/PROGRESS.md     living log of decisions, findings, and next steps
 docs/research_notes.md   background research: the paper, datasets, hardware
 CLAUDE.md            working spec for the project
 ```
@@ -219,6 +223,36 @@ and normalization) is a standard reconstruction, because the original authors ne
 released their code and the paper does not give per-layer specifications. Those
 interior choices are the natural place to tune if Stage 4 training calls for it.
 
+## Stage 3: real data
+
+This is where assumptions meet the actual files, and CLAUDE.md is strict about
+it: open one real `.mat` and check what is inside before writing any loader.
+That paid off, because three things were not as the notes assumed. The files are
+MATLAB v7.3 (HDF5), so the standard `scipy.io.loadmat` cannot read them and the
+loader uses `h5py` instead. The CSI is already amplitude (no complex numbers to
+handle) and reshapes cleanly to the paper's `150×3×3` input. And the 18
+keypoints are stored with the vertical axis first and horizontal second, the
+opposite of the natural guess.
+
+That last point was caught by the visual check, not by reading. The first
+attempt rendered every skeleton lying on its side. Swapping the two coordinate
+blocks (confirmed by checking that the nose sits above the ankles) fixed it. The
+loader in [piw/dataset.py](piw/dataset.py) turns each frame into a normalized
+CSI tensor plus the two supervision maps: joint heatmaps and part affinity
+fields, rendered in [piw/targets.py](piw/targets.py). Joints the labeling
+network was unsure about (confidence below 0.2, about 11% of them) are masked
+out of the loss.
+
+Rendered targets for six real frames, with the ground-truth skeleton drawn on
+top to confirm they line up (green joints are confident, red are masked):
+
+![stage 3 targets](figs/stage3_targets.png)
+
+The Gaussian blobs sit on the joints and the limb fields run along the bones,
+across a range of poses. Regenerate this yourself with
+`python stage3_data_check.py`. The dataset is not committed (it is 1.4 GB); see
+[docs/PROGRESS.md](docs/PROGRESS.md) for how it is stored and sampled.
+
 ## Running it
 
 Needs Python 3.10+ (developed on 3.14). CPU only, no GPU required.
@@ -235,14 +269,6 @@ python figs/make_figs.py          # regenerate the README figures (seconds)
 ```
 
 ## What comes next
-
-**Stage 3: real data.** The public [Wi-Pose dataset](https://github.com/NjtechCVLab/Wi-PoseDataset):
-166,600 packets of real CSI from 12 volunteers doing 12 actions, with 18-joint
-skeletons labeled by a vision model. Work here is a data loader (starting by opening
-a single .mat file and checking what's actually inside), label rendering (Gaussian
-heatmaps and limb vector fields at 46×82), and a visual check that rendered labels
-sit on the skeletons. Joints the vision model labeled with low confidence get masked
-out of the loss; a teacher's mistakes shouldn't become the student's targets.
 
 **Stage 4: training and evaluation.** 20 epochs over the official 132,847-sample
 split, on Colab/Kaggle GPUs rather than locally. The metric is PCK@0.2, the
