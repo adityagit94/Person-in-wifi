@@ -5,7 +5,7 @@ machine? Read this file first, then `docs/spec.md` (the spec) and `README.md`
 (the outward-facing summary). Everything needed to continue without losing
 knowledge is here. Keep it updated as work proceeds.
 
-Last updated: 2026-07-10, after Stage 3.
+Last updated: 2026-07-10, Stage 4 training code built and smoke-tested locally.
 
 ## Where things stand
 
@@ -14,7 +14,7 @@ Last updated: 2026-07-10, after Stage 3.
 | 1 | Matthew Weight loss + toy validation vs plain L2 | done |
 | 2 | The paper's network, forward pass + shape/sanity tests | done |
 | 3 | Wi-Pose dataloader + JHM/PAF target rendering + visual check | done |
-| 4 | Full training on the official split, report PCK@0.2 | next (cloud GPU) |
+| 4 | Train loop + PCK eval built and smoke-tested; GPU run pending | in progress |
 | 5 | Synthetic CSI generator; later MM-Fi | not started |
 
 ## Environment
@@ -127,16 +127,32 @@ The research report (`docs/research_notes.md`) surveys both a software-only path
 - DT-Pose (`cseeyangchen/DT-Pose`) has a Wi-Pose loader worth a glance as a
   cross-check, but is not a dependency.
 
-## What comes next (Stage 4)
+### Stage 4: training and evaluation (in progress)
 
+Built and smoke-tested locally:
+- `piw/losses.py` gained `masked_mw_loss` (MW-weighted L2 that ignores
+  masked-out channels) and `pose_loss` (JHM + PAF combined, head weights 1).
+- `piw/train.py`: Adam(lr 1e-3, betas 0.9/0.999), batch 32, 20 epochs, lr halved
+  at epochs 5/10/15. Checkpoints per epoch to `checkpoints/` (git-ignored).
+- `piw/eval.py`: decode joints from JHM by per-channel argmax, then PCK@0.2
+  normalized by the GT bbox diagonal, overall and by group (head / arms / legs).
+  Note COCO-18 has no separate foot keypoints, so ankles sit in the leg group.
+- `stage4_smoke.py`: end-to-end check on the sample. Loss drops cleanly
+  (0.25 -> 0.008 in 90 steps) and evaluation runs; PCK is near chance (0.035),
+  which is expected after 90 steps and only confirms the plumbing.
+
+Honest observation from the smoke test: the loss falls fast partly because the
+easy win is fitting the background channel and empty joint channels. Real joint
+localization needs the full dataset and many epochs; watch that PCK actually
+climbs during the real run, not just that loss drops. CPU is ~6 s/batch, so the
+full run (about 83k batches) is GPU-only, confirming the plan.
+
+Remaining for Stage 4 (the GPU run):
 1. On Colab/Kaggle: extract the full `Wi-Pose.rar`, point `WiPoseDataset` at the
-   Train/Test root.
-2. Training loop: Adam(lr 1e-3, betas 0.9/0.999), batch 32, 20 epochs, optional
-   lr halving at epochs 5/10/15. Loss = MW-weighted L2 on JHM + PAF, multiplied
-   by the per-channel validity masks the dataset already returns.
-3. Before the real run, recompute source W,H from the full dataset maxima (the
-   480x640 estimate is from the sample) if you want exact scaling.
-4. Evaluate PCK@0.2 (error normalized by GT bbox diagonal) overall and per joint
-   group (torso/arms, legs, head, feet). Watch for the paper's ordering (head
-   and feet worst) as a sanity signal, and expect a large drop on any unseen
-   condition (known result, not a bug).
+   Train/Test root (a notebook will `gdown` the dataset from its Google Drive).
+2. Optionally recompute source W,H from the full dataset maxima (the 480x640
+   estimate is from the sample) for exact coordinate scaling.
+3. Run `piw/train.py` for 20 epochs, then `piw/eval.py` on the Test split.
+   Report PCK@0.2 overall and per group; watch for the paper's ordering (head
+   and feet worst) and expect a large drop on any unseen condition (known
+   result, not a bug).

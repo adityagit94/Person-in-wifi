@@ -43,3 +43,31 @@ def mw_loss(pred, target, k=JHM_K, b=JHM_B):
     With k=0, b=1 this reduces exactly to plain MSE.
     """
     return (matthew_weight(target, k, b) * (pred - target) ** 2).mean()
+
+
+def masked_mw_loss(pred, target, channel_mask, k=JHM_K, b=JHM_B):
+    """Matthew-Weighted L2 that ignores masked-out channels.
+
+    pred, target : (B, C, H, W)
+    channel_mask : (B, C) with 1.0 for channels to keep, 0.0 to ignore
+                   (low-confidence joints, or limbs missing an endpoint).
+
+    Averages the weighted squared error over the kept channels' elements, so it
+    matches ``mw_loss`` when every channel is kept.
+    """
+    w = matthew_weight(target, k, b)
+    m = channel_mask[..., None, None]                 # (B, C, 1, 1)
+    num = (m * w * (pred - target) ** 2).sum()
+    den = m.expand_as(pred).sum().clamp_min(1.0)
+    return num / den
+
+
+def pose_loss(jhm_pred, jhm_tgt, jhm_mask, paf_pred, paf_tgt, paf_mask,
+              lam_jhm=1.0, lam_paf=1.0):
+    """Combined JHM + PAF training loss (paper head weights lambda = 1 each).
+
+    Returns (total, jhm_term, paf_term); the terms are detached for logging.
+    """
+    lj = masked_mw_loss(jhm_pred, jhm_tgt, jhm_mask, JHM_K, JHM_B)
+    lp = masked_mw_loss(paf_pred, paf_tgt, paf_mask, PAF_K, PAF_B)
+    return lam_jhm * lj + lam_paf * lp, lj.detach(), lp.detach()

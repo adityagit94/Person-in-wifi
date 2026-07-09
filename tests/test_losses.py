@@ -25,7 +25,7 @@ def test_weights_strictly_positive_for_negative_targets():
     w = matthew_weight(target, k=PAF_K, b=PAF_B)
     assert (w > 0).all()
     # The paper's literal formula w = k*y + b*I(y) DOES go negative on this
-    # data — the gotcha the magnitude form exists to avoid.
+    # data, the gotcha the magnitude form exists to avoid.
     literal = PAF_K * target + PAF_B * torch.where(target >= 0, 1.0, -1.0)
     assert (literal < 0).any()
 

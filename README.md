@@ -54,11 +54,14 @@ piw/network.py       the network: CSI tensor in, joint + limb maps out
 piw/skeleton.py      the 18 joints and 19 limbs, and the head channel counts
 piw/dataset.py       loads Wi-Pose .mat frames into network-ready tensors
 piw/targets.py       renders JHM and PAF supervision maps from keypoints
-tests/               unit tests for the loss, network, and target rendering
+piw/train.py         training loop (masked Matthew-Weighted loss, Adam)
+piw/eval.py          decodes joints from heatmaps and scores PCK@0.2
+tests/               unit tests for the loss, network, targets, and training
 mw_vs_l2_toy.py      stage-1 experiment: does the loss actually help?
 mw_vs_l2.png         its output figure
 stage2_network_check.py   prints the network's output shapes and size
 stage3_data_check.py      renders targets on real frames for a visual check
+stage4_smoke.py           trains a few steps to check the pipeline end to end
 figs/                figures for this README + the script that makes them
 docs/spec.md         the project spec: network, loss, data, evaluation
 docs/PROGRESS.md     living log of decisions, findings, and next steps

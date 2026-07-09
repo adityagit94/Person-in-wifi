@@ -119,7 +119,7 @@ ax.text(1225, 0.0435, "learning", color=BLUE, fontsize=9.5, va="center")
 ax.set_xlim(0, 2350); ax.set_ylim(0, 0.052)
 ax.set_xlabel("training step")
 ax.set_ylabel("predicted peak at true joints")
-ax.set_title("Blob size decided everything (a perfect model scores ≈ 0.96–0.99)",
+ax.set_title("Blob size decided everything (a perfect model scores about 0.96)",
              fontsize=11, color=INK, pad=12)
 ax.legend(frameon=False, fontsize=9, loc="upper left", labelcolor=INK2)
 style(ax)

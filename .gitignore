@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 data/
+checkpoints/
 
 # local tooling notes, not part of the repo
 CLAUDE.md
